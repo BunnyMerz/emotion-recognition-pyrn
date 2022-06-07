@@ -1,77 +1,124 @@
 import torch
 from torch import nn
-# from torch.utils.data import DataLoader
-# from torchvision import datasets
-# import torchvision.models as models
-# from torchvision.transforms import ToTensor, Lambda
-from torch.autograd import Variable
+from torchvision import datasets
+from torchvision.transforms import ToTensor, Lambda
+from torch.utils.data import DataLoader
+from logger import Logger
+import torchvision.transforms as transforms
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
-def epoch_info(epoch, batch, cost, avg_cost, acc):
-    print(f"Epoch= {epoch}, batch = {batch}, cost = {cost}, accuracy = {acc}")
-    print(f"[Epoch: {epoch}], averaged cost = {avg_cost}")
 
 class NeuralNetwork(nn.Module):
     def __init__(self):
         super(NeuralNetwork, self).__init__()
-        self.flatten = nn.Flatten()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Conv2d(1, 32, 3),
+        self.stack1 = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3), ## [batch, 32, 46, 46]
+            # nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3), ## [batch, 64, 44, 44]
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
+            nn.MaxPool2d(2), ## [batch, 64, 22, 22]
             nn.Dropout(0.25),
 
-            nn.Conv2d(64, 128, kernel_size=3),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(128, 128, kernel_size=3),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Dropout(0.25)
+            nn.Conv2d(64, 128, kernel_size=3), ## [batch, 128, 20, 20]
+            nn.MaxPool2d(2), ## [batch, 128, 10, 10]
+            nn.Conv2d(128, 128, kernel_size=3), ## [batch, 128, 8, 8]
+            nn.MaxPool2d(2), ## [batch, 128, 4, 4]
+            nn.Dropout(0.25),
+        )
+        self.flatten = nn.Flatten() ## [batch, 128*4*4]
+        self.stack2 = nn.Sequential(
+            nn.Linear(128*4*4,1024),
+            # nn.ReLU(),
+            nn.Dropout(0.6),
+            nn.Linear(1024,7)
         )
     
     def forward(self, x):
-        # x = self.flatten(x)
-        logits = self.linear_relu_stack(x)
-        return logits
+        x = self.stack1(x)
+        x = self.flatten(x)
+        x = self.stack2(x)
+        return x
 
-def main(data_loader):
-    emotion_model = NeuralNetwork().to(device)
-    batch_size = 16
-    total_batch = len(data_loader) // batch_size
-    epoch_size = 10
+#########
 
-    loss = torch.nn.CrossEntropyLoss()
+def train_loop(dataloader, model, loss_fn, optimizer, epoch):
+    size = len(dataloader.dataset)
+    for batch, (X, y) in enumerate(dataloader):
+        # Compute prediction and loss
+        pred = model(X)
+        loss = loss_fn(pred, y)
+
+        # Backpropagation
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        if batch % 100 == 0:
+            loss, current = loss.item(), batch * len(X)
+            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+            logger.add_train(epoch,loss,current,size)
+
+
+def test_loop(dataloader, model, loss_fn, epoch):
+    size = len(dataloader.dataset)
+    num_batches = len(dataloader)
+    test_loss, correct = 0, 0
+
+    with torch.no_grad():
+        for X, y in dataloader:
+            pred = model(X)
+            test_loss += loss_fn(pred, y).item()
+            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+
+    test_loss /= num_batches
+    correct /= size
+    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+    logger.add_test(epoch,100*correct,test_loss)
+
+def main(train_dataloader,test_dataloader,model,epochs=10):
+    global logger
+    logger = Logger()
+    loss_fn = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(params=emotion_model.parameters(), lr=0.01)
-
-    train_cost = []
-    train_accu = []
-    avg_cost = 0
-        
-    for epoch in range(epoch_size):
-        for i, (image_batch, emotion_batch) in enumerate(data_loader):
-            images = Variable(image_batch)
-            emotions = Variable(emotion_batch)
-
-            optimizer.zero_grad()
-            hypothesis = emotion_model(images)
-            cost = loss(hypothesis, emotions)
-            cost.backward()
-            optimizer.step()
-
-            prediction = hypothesis.data.max(dim=1)[1]
-            train_accu.append(((prediction.data == emotions.data).float().mean()).item())
-            train_cost.append(cost.item())
-
-            if i % 10 == 0:
-                avg_cost = cost.data / total_batch
-                epoch_info(epoch, i, train_cost[-1], avg_cost, train_accu[-1])
+    
+    try:
+        for t in range(1):
+            print(f"Epoch {t+1}\n-------------------------------")
+            # train_loop(train_dataloader, model, loss_fn, optimizer, t)
+            test_loop(test_dataloader, model, loss_fn, t)
+        print("Done!")
+    finally:
+        logger.save()
+        torch.save(emotion_model, 'emotion_model.pth')
 
 
-    print(train_cost)
-    print(train_accu)
+if __name__=='__main__':
+    # emotion_model = NeuralNetwork().to(device)
+    emotion_model = torch.load('emotion_model.pth')
 
-# model = torch.load('model.pth')
-# torch.save(model, 'model.pth')
-# model.eval()
+    test_dataset = datasets.FER2013(
+        root="data",
+        split="test",
+        transform=ToTensor(),
+    )
+
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=16,
+        shuffle=True
+    )
+
+
+    # train_dataset = datasets.FER2013(
+    #     root="data",
+    #     split='train',
+    #     transform=ToTensor()
+    # )
+
+    # train_dataloader = DataLoader(
+    #     train_dataset,
+    #     batch_size=16,
+    #     shuffle=True
+    # )
+
+    main(None,test_dataloader,emotion_model)
