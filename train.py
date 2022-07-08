@@ -6,42 +6,48 @@ from torch.utils.data import DataLoader
 from logger import Logger
 import torchvision.transforms as transforms
 
+import dataset_load
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class NeuralNetwork(nn.Module):
     def __init__(self):
         super(NeuralNetwork, self).__init__()
-        self.stack1 = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3), ## [batch, 32, 46, 46]
-            # nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3), ## [batch, 64, 44, 44]
+        self.features = nn.Sequential(
+            ## [b, 1, 48, 48]
+            nn.Conv2d(1, 32, kernel_size=3, stride=1), ## [batch, 32, 46, 46]
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1), ## [batch, 64, 44, 44]
             nn.ReLU(),
             nn.MaxPool2d(2), ## [batch, 64, 22, 22]
             nn.Dropout(0.25),
 
-            nn.Conv2d(64, 128, kernel_size=3), ## [batch, 128, 20, 20]
+            nn.Conv2d(64, 128, kernel_size=3, stride=1), ## [batch, 128, 20, 20]
+            nn.ReLU(),
             nn.MaxPool2d(2), ## [batch, 128, 10, 10]
-            nn.Conv2d(128, 128, kernel_size=3), ## [batch, 128, 8, 8]
+            nn.Conv2d(128, 128, kernel_size=3, stride=1), ## [batch, 128, 8, 8]
+            nn.ReLU(),
             nn.MaxPool2d(2), ## [batch, 128, 4, 4]
             nn.Dropout(0.25),
         )
         self.flatten = nn.Flatten() ## [batch, 128*4*4]
-        self.stack2 = nn.Sequential(
+        self.classifier = nn.Sequential(
             nn.Linear(128*4*4,1024),
-            # nn.ReLU(),
-            nn.Dropout(0.6),
-            nn.Linear(1024,7)
+            nn.ReLU(),
+            nn.Dropout(0.25),
+            nn.Linear(1024,7),
         )
     
     def forward(self, x):
-        x = self.stack1(x)
+        x = self.features(x)
         x = self.flatten(x)
-        x = self.stack2(x)
+        x = self.classifier(x)
         return x
 
 #########
 
 def train_loop(dataloader, model, loss_fn, optimizer, epoch):
+    model.train()
     size = len(dataloader.dataset)
     for batch, (X, y) in enumerate(dataloader):
         # Compute prediction and loss
@@ -60,6 +66,7 @@ def train_loop(dataloader, model, loss_fn, optimizer, epoch):
 
 
 def test_loop(dataloader, model, loss_fn, epoch):
+    model.eval()
     size = len(dataloader.dataset)
     num_batches = len(dataloader)
     test_loss, correct = 0, 0
@@ -75,50 +82,61 @@ def test_loop(dataloader, model, loss_fn, epoch):
     print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
     logger.add_test(epoch,100*correct,test_loss)
 
-def main(train_dataloader,test_dataloader,model,epochs=10):
+def main(train_dataloader,validation_dataloader,test_dataloader,model,epochs=20):
     global logger
     logger = Logger()
     loss_fn = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(params=emotion_model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(params=emotion_model.parameters(), lr=0.0001)
     
     try:
-        for t in range(1):
+        for t in range(epochs):
             print(f"Epoch {t+1}\n-------------------------------")
-            # train_loop(train_dataloader, model, loss_fn, optimizer, t)
-            test_loop(test_dataloader, model, loss_fn, t)
+            train_loop(train_dataloader, model, loss_fn, optimizer, t)
+            test_loop(validation_dataloader, model, loss_fn, t)
         print("Done!")
     finally:
+        test_loop(test_dataloader, model, loss_fn, -1)
         logger.save()
         torch.save(emotion_model, 'emotion_model.pth')
 
 
 if __name__=='__main__':
-    # emotion_model = NeuralNetwork().to(device)
-    emotion_model = torch.load('emotion_model.pth')
+    emotion_model = NeuralNetwork().to(device)
+    # emotion_model = torch.load('models/hm_9000_detect.30e.pth')
 
-    test_dataset = datasets.FER2013(
+    train_dataset = dataset_load.FER2013Custom(
         root="data",
-        split="test",
+        split="train",
         transform=ToTensor(),
     )
-
-    test_dataloader = DataLoader(
-        test_dataset,
-        batch_size=16,
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=8,
         shuffle=True
     )
 
 
-    # train_dataset = datasets.FER2013(
-    #     root="data",
-    #     split='train',
-    #     transform=ToTensor()
-    # )
+    validation_dataset = dataset_load.FER2013Custom(
+        root="data",
+        split="validation",
+        transform=ToTensor(),
+    )
+    validation_dataloader = DataLoader(
+        validation_dataset,
+        batch_size=8,
+        shuffle=True
+    )
 
-    # train_dataloader = DataLoader(
-    #     train_dataset,
-    #     batch_size=16,
-    #     shuffle=True
-    # )
 
-    main(None,test_dataloader,emotion_model)
+    test_dataset = dataset_load.FER2013Custom(
+        root="data",
+        split="test",
+        transform=ToTensor(),
+    )
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=8,
+        shuffle=True
+    )
+
+    main(train_dataloader, validation_dataloader, test_dataloader, emotion_model)

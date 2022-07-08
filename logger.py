@@ -24,12 +24,12 @@ class Logger():
         with open(str(int(time.time()))+'.model.txt','w') as log:
             for key in self.train:
                 infos = self.train[key]
-                log.write("Epoch "+str(key))
+                log.write("Epoch "+str(key)+'\n')
                 for i in infos:
                     train = f"loss:{i[0]},batch:[{i[1]}/{i[2]}]"
-                    log.write(train)
+                    log.write(train+'\n')
                 try:
-                    log.write(f"End of epoch. Accuracy:{self.test[key][0]},AvgLoss:{self.test[key][1]}")
+                    log.write(f"End of epoch. Accuracy:{self.test[key][0]},AvgLoss:{self.test[key][1]}+'\n'")
                 except:
                     pass
 
