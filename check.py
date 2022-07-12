@@ -1,6 +1,5 @@
 import PIL
 import torch, torchvision
-from torchvision.transforms import ToTensor, Lambda
 from train import NeuralNetwork
 import numpy as np
 import matplotlib.pyplot as plt
@@ -26,11 +25,11 @@ def main():
 
     # Abrir uma imagem e transformá-la conforme a especificação de resolução de entrada e
     # normalização de valores definios na especifiação rede escolhida e em seu treinamento.
-    # Essa imagem inclui um cão da raça Samoyed.
-    input_image = PIL.Image.open('tests/fear1.png').convert('L')
+    input_image = PIL.Image.open('tests/sad2.png').convert('L')
     preprocess = torchvision.transforms.Compose([
-        torchvision.transforms.Resize(64),
-        torchvision.transforms.CenterCrop(48),
+        torchvision.transforms.Resize(48),
+        # torchvision.transforms.Resize(64),
+        # torchvision.transforms.CenterCrop(48),
         torchvision.transforms.ToTensor(),
         torchvision.transforms.Normalize(mean=[0.485], std=[0.225]),
     ])

@@ -1,10 +1,7 @@
 import torch
 from torch import nn
-from torchvision import datasets
-from torchvision.transforms import ToTensor, Lambda
+from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader
-from logger import Logger
-import torchvision.transforms as transforms
 
 import dataset_load
 
@@ -34,7 +31,7 @@ class NeuralNetwork(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(128*4*4,1024),
             nn.ReLU(),
-            nn.Dropout(0.25),
+            nn.Dropout(0.5),
             nn.Linear(1024,7),
         )
     
@@ -62,7 +59,6 @@ def train_loop(dataloader, model, loss_fn, optimizer, epoch):
         if batch % 100 == 0:
             loss, current = loss.item(), batch * len(X)
             print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
-            logger.add_train(epoch,loss,current,size)
 
 
 def test_loop(dataloader, model, loss_fn, epoch):
@@ -80,13 +76,10 @@ def test_loop(dataloader, model, loss_fn, epoch):
     test_loss /= num_batches
     correct /= size
     print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
-    logger.add_test(epoch,100*correct,test_loss)
 
-def main(train_dataloader,validation_dataloader,test_dataloader,model,epochs=20):
-    global logger
-    logger = Logger()
+def main(train_dataloader,validation_dataloader,test_dataloader,model,epochs=5):
     loss_fn = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(params=emotion_model.parameters(), lr=0.0001)
+    optimizer = torch.optim.Adam(params=emotion_model.parameters(), lr=0.001)
     
     try:
         for t in range(epochs):
@@ -96,13 +89,12 @@ def main(train_dataloader,validation_dataloader,test_dataloader,model,epochs=20)
         print("Done!")
     finally:
         test_loop(test_dataloader, model, loss_fn, -1)
-        logger.save()
-        torch.save(emotion_model, 'emotion_model.pth')
+        torch.save(emotion_model, 'pyrn-e45.pth')
 
 
 if __name__=='__main__':
-    emotion_model = NeuralNetwork().to(device)
-    # emotion_model = torch.load('models/hm_9000_detect.30e.pth')
+    # emotion_model = NeuralNetwork().to(device)
+    emotion_model = torch.load('models/pyrn-e40.pth')
 
     train_dataset = dataset_load.FER2013Custom(
         root="data",
@@ -111,7 +103,7 @@ if __name__=='__main__':
     )
     train_dataloader = DataLoader(
         train_dataset,
-        batch_size=8,
+        batch_size=128,
         shuffle=True
     )
 
@@ -123,7 +115,7 @@ if __name__=='__main__':
     )
     validation_dataloader = DataLoader(
         validation_dataset,
-        batch_size=8,
+        batch_size=128,
         shuffle=True
     )
 
@@ -135,7 +127,7 @@ if __name__=='__main__':
     )
     test_dataloader = DataLoader(
         test_dataset,
-        batch_size=8,
+        batch_size=128,
         shuffle=True
     )
 
